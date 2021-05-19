@@ -1,6 +1,8 @@
 ﻿#include <iostream>
 using namespace std;
 
+/// Посмотрела, хорошо бы еще метод вывода каждого класса сделать, чтобы видно было, как оно работает
+
 struct Transformer;
 struct Number;
 struct BinaryOperation;
