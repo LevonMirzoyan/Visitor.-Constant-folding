@@ -1,7 +1,6 @@
-﻿#include <iostream>
-using namespace std;
-
-/// Посмотрела, хорошо бы еще метод вывода каждого класса сделать, чтобы видно было, как оно работает
+#include <iostream>
+#include <math.h>
+#include <string>   
 
 struct Transformer;
 struct Number;
@@ -13,6 +12,7 @@ struct Expression
     virtual ~Expression() { }
     virtual double evaluate() const = 0;
     virtual Expression* transform(Transformer* tr) const = 0;
+    virtual std::string print() const = 0;
 };
 
 struct Transformer //pattern Visitor
@@ -26,10 +26,23 @@ struct Transformer //pattern Visitor
 
 struct Number : Expression
 {
-    Number(double value) : value_(value) {}
-    double value() const { return value_; }
-    double evaluate() const { return value_; }
-    Expression* transform(Transformer* tr) const { return tr->transformNumber(this); }
+    Number(double value) {
+        this->value_ = value;
+    }
+    double value() const {
+        return this->value_;
+    }
+
+    double evaluate() const {
+        return this->value_;
+    }
+    Expression* transform(Transformer* tr) const {
+        return tr->transformNumber(this);
+    }
+
+    std::string print() const {
+        return std::to_string(this->value_);
+    }
 private:
     double value_;
 };
@@ -42,7 +55,11 @@ struct BinaryOperation : Expression
         DIV = '/',
         MUL = '*'
     };
-    BinaryOperation(Expression const* left, int op, Expression const* right) : left_(left), op_(op), right_(right) {}
+    BinaryOperation(Expression const* left, int op, Expression const* right) {
+        this->left_ = left;
+        this->op_ = op;
+        this->right_ = right;
+    }
     ~BinaryOperation() {
         delete left_;
         delete right_;
@@ -65,10 +82,27 @@ struct BinaryOperation : Expression
             return left_->evaluate() / right_->evaluate();
         }
     }
-    Expression* transform(Transformer* tr) const { return tr->transformBinaryOperation(this); }
-    Expression const* left() const { return left_; }
-    Expression const* right() const { return right_; }
-    int operation() const { return op_; }
+
+    Expression* transform(Transformer* tr) const {
+        return tr->transformBinaryOperation(this);
+    }
+
+    Expression const* left() const {
+        return this->left_;
+    }
+
+    Expression const* right() const {
+        return this->right_;
+    }
+    int operation() const {
+        return this->op_;
+    }
+
+    std::string print() const {
+        return this->left_->print() + std::string(1, this->op_) + this->right_->print();
+    }
+
+
 private:
     Expression const* left_;
     Expression const* right_;
@@ -77,12 +111,33 @@ private:
 
 struct FunctionCall : Expression
 {
+
     FunctionCall(std::string const& name, Expression const* arg) : name_(name), arg_(arg) {}
-    ~FunctionCall() { delete arg_; }
-    double evaluate() const { return arg_->evaluate(); }
-    Expression* transform(Transformer* tr) const { return tr->transformFunctionCall(this); }
-    std::string const& name() const { return name_; }
-    Expression const* arg() const { return arg_; }
+    ~FunctionCall() {
+        delete arg_;
+    }
+    double evaluate() const {
+        if (name_ == "sqrt") {
+            return sqrt(arg_->evaluate());
+        }
+        if (name_ == "abs") {
+            return abs(arg_->evaluate());
+        }
+        return this->arg_->evaluate();
+    }
+    Expression* transform(Transformer* tr) const {
+        return tr->transformFunctionCall(this);
+    }
+    std::string const& name() const {
+        return this->name_;
+    }
+    Expression const* arg() const {
+        return this->arg_;
+    }
+
+    std::string print() const {
+        return this->name_ + "(" + this->arg_->print() + ")";
+    }
 private:
     std::string const name_;
     Expression const* arg_;
@@ -91,72 +146,65 @@ private:
 struct Variable : Expression
 {
     Variable(std::string const name) : name_(name) {}
-    std::string const& name() const { return name_; }
-    double evaluate() const { return 0; }
-    Expression* transform(Transformer* tr) const { return tr->transformVariable(this); }
+    std::string const& name() const {
+        return this->name_;
+    }
+    double evaluate() const {
+        return 0.0;
+    }
+    Expression* transform(Transformer* tr) const {
+        return tr->transformVariable(this);
+    }
+
+    std::string print() const {
+        return this->name_;
+    }
+
 private:
     std::string const name_;
 };
 
 
-/**
-* реализуйте все необходимые методы
-* если считаете нужным, то можете
-* заводить любые вспомогательные
-* методы
-*/
+
 
 struct FoldConstants : Transformer
 {
     Expression* transformNumber(Number const* number)
     {
-        Number* tmp = new Number(number->value());
-        return tmp;
+        return new Number(number->evaluate());
     }
-
     Expression* transformBinaryOperation(BinaryOperation const* binop)
     {
-        Transformer* t = new FoldConstants();
-        Expression* a = binop->left()->transform(t);
-        Expression* b = binop->right()->transform(t);
-        Number* n1 = dynamic_cast<Number*>(a);
-        Number* n2 = dynamic_cast<Number*>(b);
-        BinaryOperation* tmp = new BinaryOperation(a, binop->operation(), b);
-        if (n1 && n2) {
-            Number* ans = new Number(tmp->evaluate());
-            delete tmp;
-            delete t;
-            return ans;
+        Expression* left = binop->left()->transform(this);
+        Expression* right = binop->right()->transform(this);
+        Number* left_ = dynamic_cast <Number*>(left);
+        Number* right_ = dynamic_cast <Number*>(right);
+        if (left_ && right_) {
+            Expression* newBinOp = new BinaryOperation(left, binop->operation(), right);
+            double value = newBinOp->evaluate();
+            delete newBinOp;
+            return new Number(value);
         }
-        else {
-            delete t;
-            return tmp;
-        }
+        return new BinaryOperation(left, binop->operation(), right);
     }
 
     Expression* transformFunctionCall(FunctionCall const* fcall)
     {
-        Transformer* t = new FoldConstants();
-        Expression* targ = fcall->arg()->transform(t);
-        Number* n = dynamic_cast<Number*>(targ);
-        Expression* tmp = new FunctionCall(fcall->name(), targ);
-        if (n) {
-            Number* ans = new Number(tmp->evaluate());
-            delete tmp;
-            delete t;
-            return ans;
+        Expression* arg = fcall->arg()->transform(this);
+        Number* number = dynamic_cast <Number*>(arg);
+        if (number) {
+            Expression* fnewCall = new FunctionCall(fcall->name(), number);
+            double tmp = fnewCall->evaluate();
+            delete fnewCall;
+            return new Number(tmp);
         }
-        else {
-            delete t;
-            return tmp;
-        }
+        return new FunctionCall(fcall->name(), arg);
     }
-
     Expression* transformVariable(Variable const* var)
     {
-        Variable* tmp = new Variable(var->name());
-        return tmp;
+        return new Variable(var->name());
     }
+
 };
 
 
@@ -171,5 +219,5 @@ int main() {
     FunctionCall* callAbs = new FunctionCall("abs", mult);
     FoldConstants FC;
     Expression* newExpr = callAbs->transform(&FC);
-     
+    std::cout << newExpr->print();
 }
